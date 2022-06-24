@@ -2,12 +2,10 @@
 
 pub use collision_pipeline::CollisionPipeline;
 pub use event_handler::{ActiveEvents, ChannelEventCollector, EventHandler};
-pub use physics_hooks::{
-    ActiveHooks, ContactModificationContext, PairFilterContext, PhysicsHooks, PostSolveContext,
-};
+pub use physics_hooks::{ActiveHooks, ContactModificationContext, PairFilterContext, PhysicsHooks};
 pub use physics_pipeline::PhysicsPipeline;
 pub use query_pipeline::{QueryPipeline, QueryPipelineMode};
-pub use voxel_fracture_hooks::{FractureEvent, VoxelFractureHooks, VoxelFractureMaterial};
+pub use voxel_fracture_pipeline::{FractureEvent, VoxelFractureMaterial, VoxelFracturePipeline};
 
 #[cfg(feature = "debug-render")]
 pub use self::debug_render_pipeline::{
@@ -24,4 +22,4 @@ mod user_changes;
 
 #[cfg(feature = "debug-render")]
 mod debug_render_pipeline;
-mod voxel_fracture_hooks;
+mod voxel_fracture_pipeline;

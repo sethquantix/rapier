@@ -1,6 +1,6 @@
 use crate::dynamics::RigidBodySet;
 use crate::geometry::{ColliderSet, CollisionEvent, ContactPair};
-use crate::pipeline::voxel_fracture_hooks::FractureEvent;
+use crate::pipeline::voxel_fracture_pipeline::FractureEvent;
 use crossbeam::channel::Sender;
 
 bitflags::bitflags! {

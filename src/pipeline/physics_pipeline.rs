@@ -14,7 +14,7 @@ use crate::geometry::{
     ContactManifoldIndex, NarrowPhase,
 };
 use crate::math::{Real, Vector};
-use crate::pipeline::{EventHandler, PhysicsHooks, PostSolveContext, VoxelFractureHooks};
+use crate::pipeline::{EventHandler, PhysicsHooks};
 use {crate::dynamics::RigidBodySet, crate::geometry::ColliderSet};
 
 /// The physics pipeline, responsible for stepping the whole physics simulation.
@@ -148,7 +148,6 @@ impl PhysicsPipeline {
         colliders: &mut ColliderSet,
         impulse_joints: &mut ImpulseJointSet,
         multibody_joints: &mut MultibodyJointSet,
-        hooks: &dyn PhysicsHooks,
         events: &dyn EventHandler,
     ) {
         self.counters.stages.island_construction_time.resume();
@@ -278,20 +277,6 @@ impl PhysicsPipeline {
                         )
                     });
             });
-        }
-
-        {
-            let mut context = PostSolveContext {
-                integration_parameters,
-                bodies,
-                colliders,
-                islands,
-                narrow_phase: &*narrow_phase,
-                active_pairs: &active_pairs,
-            };
-            // FIXME: don’t hard-code this.
-            let fractures = VoxelFractureHooks::default();
-            fractures.post_solve(&mut context, events);
         }
 
         self.counters.stages.solver_time.pause();
@@ -429,23 +414,6 @@ impl PhysicsPipeline {
             multibody.1.forward_kinematics(bodies, true);
         }
 
-        self.detect_collisions(
-            integration_parameters,
-            islands,
-            broad_phase,
-            narrow_phase,
-            bodies,
-            colliders,
-            &modified_colliders[..],
-            &mut removed_colliders,
-            hooks,
-            events,
-            true,
-        );
-
-        self.clear_modified_colliders(colliders, &mut modified_colliders);
-        removed_colliders.clear();
-
         let mut remaining_time = integration_parameters.dt;
         let mut integration_parameters = *integration_parameters;
 
@@ -456,7 +424,26 @@ impl PhysicsPipeline {
                 (true, integration_parameters.max_ccd_substeps)
             };
 
+        let mut first_substep = true;
         while remaining_substeps > 0 {
+            self.advance_to_final_positions(islands, bodies, colliders, &mut modified_colliders);
+            self.detect_collisions(
+                &integration_parameters,
+                islands,
+                broad_phase,
+                narrow_phase,
+                bodies,
+                colliders,
+                &mut modified_colliders,
+                &mut removed_colliders,
+                hooks,
+                events,
+                first_substep,
+            );
+
+            self.clear_modified_colliders(colliders, &mut modified_colliders);
+            removed_colliders.clear();
+
             // If there are more than one CCD substep, we need to split
             // the timestep into multiple intervals. First, estimate the
             // size of the time slice we will integrate for this substep.
@@ -526,7 +513,6 @@ impl PhysicsPipeline {
                 colliders,
                 impulse_joints,
                 multibody_joints,
-                hooks,
                 events,
             );
 
@@ -553,34 +539,7 @@ impl PhysicsPipeline {
                 }
             }
 
-            self.advance_to_final_positions(islands, bodies, colliders, &mut modified_colliders);
-
-            self.detect_collisions(
-                &integration_parameters,
-                islands,
-                broad_phase,
-                narrow_phase,
-                bodies,
-                colliders,
-                &mut modified_colliders,
-                &mut removed_colliders,
-                hooks,
-                events,
-                false,
-            );
-
-            self.clear_modified_colliders(colliders, &mut modified_colliders);
-        }
-
-        // Finally, make sure we update the world mass-properties of the rigid-bodies
-        // that moved. Otherwise, users may end up applying forces wrt. an outdated
-        // center of mass.
-        // TODO: avoid updating the world mass properties twice (here, and
-        //       at the beginning of the next timestep) for bodies that were
-        //       not modified by the user in the mean time.
-        for handle in islands.active_dynamic_bodies() {
-            let rb = bodies.index_mut_internal(*handle);
-            rb.mprops.update_world_mass_properties(&rb.pos.position);
+            first_substep = false;
         }
 
         self.counters.step_completed();

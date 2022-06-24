@@ -1,7 +1,7 @@
-use crate::dynamics::RigidBodyBuilder;
-use crate::geometry::{Collider, ColliderBuilder, ColliderHandle, ContactPair, AABB};
+use crate::dynamics::{IntegrationParameters, IslandManager, RigidBodyBuilder, RigidBodySet};
+use crate::geometry::{ColliderBuilder, ColliderHandle, ColliderSet, NarrowPhase, AABB};
 use crate::math::{Point, Real, Vector};
-use crate::pipeline::{EventHandler, PhysicsHooks, PostSolveContext};
+use crate::pipeline::EventHandler;
 use parry::{shape::SharedShape, utils::hashmap::HashMap};
 
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -29,27 +29,31 @@ pub struct FractureEvent {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct VoxelFractureHooks {
+pub struct VoxelFracturePipeline {
     pub default_material: VoxelFractureMaterial,
     // TODO: allow one material per voxel collider.
 }
 
-impl VoxelFractureHooks {
-    pub fn post_solve(&self, context: &mut PostSolveContext, events: &dyn EventHandler) {
-        let t0 = instant::now();
+impl VoxelFracturePipeline {
+    pub fn step(
+        &self,
+        integration_parameters: &IntegrationParameters,
+        islands: &mut IslandManager,
+        narrow_phase: &NarrowPhase,
+        bodies: &mut RigidBodySet,
+        colliders: &mut ColliderSet,
+        events: &dyn EventHandler,
+    ) {
         let mut fragments: HashMap<ColliderHandle, Vec<ColliderHandle>> = Default::default();
 
         let mut num_pairs = 0;
         let mut num_fract = 0;
 
-        for active_pair in context
-            .active_pairs
-            .iter()
-            .map(|id| context.narrow_phase.contact_pair_at_index(*id))
-        {
+        // TODO: only iterate on the active pairs.
+        for active_pair in narrow_phase.contact_pairs() {
             num_pairs += 1;
-            let co1 = &context.colliders[active_pair.collider1];
-            let co2 = &context.colliders[active_pair.collider2];
+            let co1 = &colliders[active_pair.collider1];
+            let co2 = &colliders[active_pair.collider2];
 
             if co1.shape.as_voxels().is_none() && co2.shape.as_voxels().is_none() {
                 continue;
@@ -59,7 +63,7 @@ impl VoxelFractureHooks {
                 if let Some(point) = &manifold.find_deepest_contact() {
                     // Compute the fracture pattern at this contact.
                     // momentum = force * dist => dist = momentum / force
-                    let force = point.data.impulse * context.integration_parameters.inv_dt();
+                    let force = point.data.impulse * integration_parameters.inv_dt();
 
                     if force < self.default_material.min_force {
                         continue;
@@ -75,7 +79,7 @@ impl VoxelFractureHooks {
                             |handle: ColliderHandle,
                              local_n: Vector<Real>,
                              local_p: Point<Real>| {
-                                let mut collider = &mut context.colliders[handle];
+                                let mut collider = &mut colliders[handle];
 
                                 if let Some(vox) = collider.shape.as_voxels() {
                                     let fracture_normal = local_n;
@@ -103,11 +107,11 @@ impl VoxelFractureHooks {
                                             .position(*collider.position());
                                         let collider =
                                             ColliderBuilder::new(SharedShape::new(in_box));
-                                        let body_handle = context.bodies.insert(body);
-                                        let fragment_handle = context.colliders.insert_with_parent(
+                                        let body_handle = bodies.insert(body);
+                                        let fragment_handle = colliders.insert_with_parent(
                                             collider,
                                             body_handle,
-                                            context.bodies,
+                                            bodies,
                                         );
 
                                         fragments
@@ -130,11 +134,7 @@ impl VoxelFractureHooks {
                 fractured_collider: handle,
                 fragments,
             };
-            events.handle_fracture_event(context.bodies, context.colliders, event);
+            events.handle_fracture_event(bodies, colliders, event);
         }
-
-        // let t1 = instant::now();
-        // dbg!(t1 - t0);
-        // dbg!(num_pairs, num_fract);
     }
 }
