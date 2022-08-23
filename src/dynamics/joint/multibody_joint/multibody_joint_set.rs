@@ -170,8 +170,12 @@ impl MultibodyJointSet {
     /// Removes an multibody_joint from this set.
     pub fn remove(&mut self, handle: MultibodyJointHandle, wake_up: bool) {
         if let Some(removed) = self.rb2mb.get(handle.0).copied() {
-            let multibody = self.multibodies.remove(removed.multibody.0).unwrap();
-
+            let multibody = if let Some(mb) = self.multibodies.remove(removed.multibody.0) {
+                mb
+            } else {
+                eprintln!("Handle doesn't exist in this set");
+                return
+            };
             // Remove the edge from the connectivity graph.
             if let Some(parent_link) = multibody.link(removed.id).unwrap().parent_id() {
                 let parent_rb = multibody.link(parent_link).unwrap().rigid_body;

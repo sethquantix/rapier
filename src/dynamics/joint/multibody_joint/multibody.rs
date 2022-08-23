@@ -177,6 +177,8 @@ impl Multibody {
 
                 link.internal_id = i;
                 link.assembly_id = assembly_id;
+                let prev = link.parent_internal_id;
+                println!("{link_id2new_id:?} / {prev}");
                 link.parent_internal_id = link_id2new_id[link.parent_internal_id];
                 assembly_id += link_ndofs;
             }
